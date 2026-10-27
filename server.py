@@ -280,6 +280,10 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print("Отчёт: http://localhost:%d  (база: %s)" % (PORT, DB_PATH))
+    if SYNC.enabled and not os.path.exists(DB_PATH):
+        print("Базы нет — загружаю всю таблицу из %s, это займёт время" % SYNC.env["DB_HOST"], flush=True)
+        t0 = time.time()
+        print("Загружено строк: %d за %.0f мин" % (SYNC.run_once()[0], (time.time() - t0) / 60), flush=True)
     if SYNC.enabled:
         print("Синхронизация с %s каждые %d с" % (SYNC.env["DB_HOST"], SYNC.interval))
         SYNC.start()

@@ -24,6 +24,19 @@ COLUMNS = ["id", "date", "token", "goal_id", "transaction_id", "personalarea_id"
 SELECT = "SELECT %s FROM postback_proxy" % ", ".join("`%s`" % c for c in COLUMNS)
 UPSERT = "INSERT OR REPLACE INTO postback_proxy (%s) VALUES (%s)" % (
     ", ".join('"%s"' % c for c in COLUMNS), ", ".join("?" * len(COLUMNS)))
+# Если cf.db ещё нет, она создаётся пустой и первая синхронизация загружает всю таблицу целиком
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS postback_proxy (
+  id INTEGER PRIMARY KEY,
+  date TEXT, token TEXT, goal_id TEXT, transaction_id TEXT, personalarea_id TEXT,
+  uid TEXT, status TEXT, amount TEXT, comment TEXT, resend TEXT, http_code TEXT,
+  source TEXT, skm TEXT, fin_product TEXT, departament TEXT, vkm TEXT,
+  personal_lk_id TEXT, approved_sum TEXT, updated_at TEXT, user TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_date ON postback_proxy(date);
+CREATE INDEX IF NOT EXISTS idx_txn ON postback_proxy(transaction_id, id);
+CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT);
+"""
 
 
 def load_env(path=os.path.join(HERE, ".env")):
@@ -72,9 +85,10 @@ class Syncer:
             local = sqlite3.connect(self.db_path, timeout=30)
             try:
                 local.execute("PRAGMA journal_mode=WAL")
-                local.execute("CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT)")
+                local.executescript(SCHEMA)
                 state = dict(local.execute("SELECT key, value FROM sync_state"))
                 max_id = local.execute("SELECT MAX(id) FROM postback_proxy").fetchone()[0] or 0
+                full = max_id == 0
                 # Изменённые строки ищем с запасом в минуту от последнего известного updated_at
                 since = state.get("updated_at") or local.execute(
                     "SELECT MAX(updated_at) FROM postback_proxy WHERE id > ?", (max_id - 50000,)).fetchone()[0]
@@ -92,6 +106,8 @@ class Syncer:
                         local.commit()
                         new_rows += len(rows)
                         max_id = rows[-1][0]
+                        if full and new_rows % 500000 < BATCH:
+                            print("Первичная загрузка: %d строк" % new_rows, flush=True)
 
                     if since:
                         cur.execute(SELECT + " WHERE updated_at >= %s - INTERVAL 1 MINUTE AND id <= %s", (since, max_id))
