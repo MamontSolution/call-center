@@ -1,0 +1,9 @@
+services:
+  dashboard:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "192.168.1.112:8080:8000"   # только локальная сеть
+    volumes:
+      - ./data:/data            # cf.db и cf_*.csv
+      - ./.env:/app/.env:ro     # доступ к MariaDB

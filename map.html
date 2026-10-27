@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Карта выдач</title>
+<script src="/static/d3.min.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f4f2;
+  --surface: #fcfcfb;
+  --border: #e4e3df;
+  --grid: #ecebe7;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --muted: #8a8984;
+  --accent: #2a78d6;
+  --zero: #e9e8e4;
+  --stroke: #fcfcfb;
+  --bar: rgba(42, 120, 214, .16);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --border: #2c2c2a; --grid: #262624;
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8d8c85; --accent: #3987e5;
+    --zero: #2a2a28; --stroke: #1a1a19; --bar: rgba(57, 135, 229, .22);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1a1a19; --border: #2c2c2a; --grid: #262624;
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8d8c85; --accent: #3987e5;
+  --zero: #2a2a28; --stroke: #1a1a19; --bar: rgba(57, 135, 229, .22);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1600px; margin: 0 auto; padding: 24px 16px 48px; }
+nav.pages { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+nav.pages a { color: var(--text-2); text-decoration: none; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); }
+nav.pages a.active { color: var(--text); border-color: var(--accent); font-weight: 600; }
+h1 { margin: 0; font-size: 22px; font-weight: 650; }
+.sub { color: var(--text-2); margin: 4px 0 16px; }
+.filters { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; }
+.filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
+.filters input, .filters select, .filters button { font: inherit; font-size: 14px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; height: 34px; }
+.filters button { cursor: pointer; background: var(--surface); }
+.filters button:hover { border-color: var(--muted); }
+.filters button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+.kpi .label { color: var(--text-2); font-size: 12px; }
+.kpi .value { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; min-width: 0; }
+.card h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.card-head { padding: 14px 16px 0; }
+.card-head .hint { color: var(--muted); font-size: 12px; margin-top: 2px; }
+#map { width: 100%; display: block; }
+#map path.region { stroke: var(--stroke); stroke-width: .6; cursor: pointer; }
+#map path.region:hover { stroke: var(--text); stroke-width: 1.2; }
+#map path.region.selected { stroke: var(--text); stroke-width: 2; }
+#map circle.city { stroke: var(--stroke); stroke-width: 2; cursor: pointer; }
+#map circle.city.selected { stroke: var(--text); }
+#map text.city-label { font-size: 11px; fill: var(--text-2); pointer-events: none; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 16px 14px; font-size: 12px; color: var(--muted); }
+.legend .steps { display: flex; }
+.legend .steps span { width: 46px; height: 10px; }
+.legend .steps span:first-child { border-radius: 3px 0 0 3px; }
+.legend .steps span:last-child { border-radius: 0 3px 3px 0; }
+.legend .ticks { display: flex; font-variant-numeric: tabular-nums; }
+.legend .ticks span { width: 46px; text-align: left; }
+.legend .zero { display: inline-block; width: 14px; height: 10px; border-radius: 3px; background: var(--zero); vertical-align: -1px; margin-right: 4px; }
+#details { padding: 16px; }
+#details .big { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+#details .muted { color: var(--muted); font-size: 12px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; position: sticky; top: 0; background: var(--surface); }
+td.name { white-space: normal; }
+td.bar { position: relative; }
+td.bar span { position: relative; }
+td.bar::before { content: ""; position: absolute; right: 0; top: 5px; bottom: 5px; width: var(--w, 0); background: var(--bar); border-radius: 4px 0 0 4px; }
+#regions tbody tr { cursor: pointer; }
+#regions tbody tr:hover td { background: var(--bg); }
+#regions tbody tr.selected td { background: var(--bar); }
+.table-wrap { overflow: auto; max-height: 640px; }
+.note { color: var(--muted); font-size: 12px; margin-top: 12px; }
+.err { color: #c62828; }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--text); color: var(--bg); border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.5; display: none; max-width: 280px; }
+#loading[hidden] { display: none; }
+#loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); background: color-mix(in srgb, var(--surface) 70%, transparent); border-radius: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <nav class="pages"><a href="/call-centar">Время между статусами</a><a href="/map" class="active">Карта выдач</a></nav>
+  <h1>Выданные займы по регионам</h1>
+  <div class="sub">Заявки со статусом 12 «Займ выдан»; регион и дата заявки — из queues по transaction_id</div>
+
+  <form class="filters" id="filters">
+    <label>Дата заявки с<input type="date" id="from" required></label>
+    <label>по<input type="date" id="to" required></label>
+    <div class="presets">
+      <button type="button" data-preset="week">Эта неделя</button>
+      <button type="button" data-preset="prevweek">Прошлая неделя</button>
+      <button type="button" data-preset="month">Этот месяц</button>
+      <button type="button" data-preset="30">30 дней</button>
+      <button type="button" data-preset="90">90 дней</button>
+    </div>
+    <label>Адрес
+      <select id="address">
+        <option value="registration">Регистрации</option>
+        <option value="residential">Проживания</option>
+      </select>
+    </label>
+    <button type="submit" class="primary">Показать</button>
+  </form>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="layout">
+    <div class="card" style="position:relative">
+      <div class="card-head"><h2 id="mapTitle">Карта</h2><div class="hint">Наведите на регион, чтобы увидеть цифры; нажмите, чтобы открыть города</div></div>
+      <svg id="map" role="img" aria-label="Карта России с количеством выданных займов по регионам"></svg>
+      <div class="legend" id="legend"></div>
+      <div id="loading">Загрузка…</div>
+    </div>
+    <div class="card" id="details"></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><h2>Все регионы</h2><div class="hint">Нажмите на строку, чтобы выделить регион на карте</div></div>
+    <div class="table-wrap"><table id="regions"></table></div>
+  </div>
+  <div class="note" id="note"></div>
+</main>
+<div id="tip"></div>
+
+<script>
+const nf = new Intl.NumberFormat('ru-RU');
+const pct = (a, b) => b ? (a / b * 100).toLocaleString('ru-RU', {maximumFractionDigits: 1}) + '%' : '—';
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const longFmt = new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric'});
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const parse = s => new Date(s + 'T00:00:00');
+const $ = id => document.getElementById(id);
+const dark = () => document.documentElement.dataset.theme === 'dark' ||
+  (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+
+// Последовательная шкала одного оттенка (синий), 7 ступеней; на тёмном фоне — шаги, видимые на тёмной поверхности
+const RAMP_LIGHT = ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'];
+const RAMP_DARK = ['#184f95', '#1c5cab', '#256abf', '#2a78d6', '#3987e5', '#6da7ec', '#9ec5f4'];
+// Небольшие по площади субъекты показываем ещё и кружком, иначе их не видно и не нажать
+const SMALL = {moscow: 'Москва', spb: 'Санкт-Петербург', sevastopol: 'Севастополь'};
+
+let geo = null, data = null, selected = null;
+
+function preset(name) {
+  const last = parse(data ? data.last_day : iso(new Date()));
+  const monday = new Date(last); monday.setDate(last.getDate() - (last.getDay() + 6) % 7);
+  if (name === 'week') return [iso(monday), iso(last)];
+  if (name === 'prevweek') {
+    const a = new Date(monday); a.setDate(a.getDate() - 7);
+    const b = new Date(monday); b.setDate(b.getDate() - 1);
+    return [iso(a), iso(b)];
+  }
+  if (name === 'month') return [iso(new Date(last.getFullYear(), last.getMonth(), 1)), iso(last)];
+  const a = new Date(last); a.setDate(a.getDate() - (+name - 1));
+  return [iso(a), iso(last)];
+}
+
+async function load(from, to) {
+  $('loading').hidden = false;
+  $('loading').textContent = 'Загрузка… при первом открытии периода регионы догружаются из queues';
+  const q = new URLSearchParams({address: $('address').value});
+  if (from) q.set('from', from);
+  if (to) q.set('to', to);
+  try {
+    const [g, d] = await Promise.all([
+      geo ? geo : fetch('/static/russia.json').then(r => r.json()),
+      fetch('/api/map?' + q).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+    ]);
+    geo = g; data = d;
+  } catch (e) {
+    $('loading').innerHTML = '<span class="err">Не удалось загрузить данные: ' + esc(e.message) + '</span>';
+    return;
+  }
+  $('from').value = data.from;
+  $('to').value = data.to;
+  $('from').max = $('to').max = data.last_day;
+  history.replaceState(null, '', `?from=${data.from}&to=${data.to}&address=${data.address}`);
+  if (selected && !data.regions.some(r => r.key === selected)) selected = null;
+  render();
+  $('loading').hidden = true;
+}
+
+const byKey = () => Object.fromEntries(data.regions.map(r => [r.key, r]));
+const val = r => r ? r.count : 0;
+const fmtVal = v => nf.format(v);
+
+function scale() {
+  const vals = data.regions.filter(r => r.key !== 'unknown').map(val).filter(v => v > 0).sort((a, b) => a - b);
+  const ramp = dark() ? RAMP_DARK : RAMP_LIGHT;
+  if (!vals.length) return {color: () => null, ramp, ticks: []};
+  // Квантили: распределение сильно скошено (Москва в десятки раз больше), линейная шкала залила бы всё одним цветом
+  const q = d3.scaleQuantile().domain(vals).range(ramp);
+  return {color: v => v > 0 ? q(v) : null, ramp, ticks: [vals[0], ...q.quantiles()]};
+}
+
+function render() {
+  const regs = byKey();
+  const sc = scale();
+  const zero = getComputedStyle(document.documentElement).getPropertyValue('--zero').trim();
+  const fill = key => sc.color(val(regs[key])) || zero;
+
+  // KPI
+  const n = data.total;
+  const known = data.regions.filter(r => r.key !== 'unknown');
+  $('kpis').innerHTML = [
+    ['Выдано займов', nf.format(n)],
+    ['Регионов с выдачами', nf.format(known.length)],
+    ['Лидер', known[0] ? `${esc(known[0].name)} · ${pct(known[0].count, n)}` : '—'],
+  ].map(([l, v]) => `<div class="kpi"><div class="label">${l}</div><div class="value" style="${l === 'Лидер' ? 'font-size:16px;white-space:normal' : ''}">${v}</div></div>`).join('');
+  $('mapTitle').textContent = `Количество выданных займов по адресу ${data.address === 'residential' ? 'проживания' : 'регистрации'}`;
+
+  // Карта
+  const svg = d3.select('#map');
+  const width = $('map').clientWidth || 900, height = Math.round(width * 0.56);
+  svg.attr('viewBox', `0 0 ${width} ${height}`).attr('height', height);
+  const projection = d3.geoConicEqualArea().rotate([-100, 0]).parallels([52, 64]).fitExtent([[84, 8], [width - 8, height - 8]], geo);
+  const path = d3.geoPath(projection);
+  svg.selectAll('*').remove();
+  svg.append('g').selectAll('path').data(geo.features).join('path')
+    .attr('class', d => 'region' + (d.properties.key === selected ? ' selected' : ''))
+    .attr('d', path)
+    .attr('fill', d => fill(d.properties.key))
+    .on('mousemove', (e, d) => tip(e, d.properties.key, d.properties.name))
+    .on('mouseleave', hideTip)
+    .on('click', (e, d) => select(d.properties.key));
+  const small = geo.features.filter(f => SMALL[f.properties.key]);
+  const pts = small.map(f => ({key: f.properties.key, name: SMALL[f.properties.key], xy: path.centroid(f)}));
+  const g = svg.append('g');
+  g.selectAll('circle').data(pts).join('circle')
+    .attr('class', d => 'city' + (d.key === selected ? ' selected' : ''))
+    .attr('cx', d => d.xy[0]).attr('cy', d => d.xy[1]).attr('r', 7)
+    .attr('fill', d => fill(d.key))
+    .on('mousemove', (e, d) => tip(e, d.key, d.name))
+    .on('mouseleave', hideTip)
+    .on('click', (e, d) => select(d.key));
+  g.selectAll('text').data(pts).join('text').attr('class', 'city-label')
+    // Подпись Севастополя — слева от кружка, чтобы не закрывать соседние регионы
+    .attr('x', d => d.xy[0] + (d.key === 'sevastopol' ? -10 : 10)).attr('y', d => d.xy[1] + 4)
+    .attr('text-anchor', d => d.key === 'sevastopol' ? 'end' : 'start').text(d => d.name);
+
+  // Легенда
+  $('legend').innerHTML = sc.ticks.length
+    ? `<span><span class="zero"></span>нет выдач</span>
+       <div><div class="steps">${sc.ramp.map(c => `<span style="background:${c}"></span>`).join('')}</div>
+       <div class="ticks">${sc.ticks.map(t => `<span>от ${fmtVal(Math.round(t))}</span>`).join('')}</div></div>
+       <span>цвет — по квантилям: в каждой ступени примерно одинаковое число регионов</span>`
+    : '';
+
+  // Таблица регионов
+  const maxCount = Math.max(1, ...data.regions.map(r => r.count));
+  $('regions').innerHTML = `<thead><tr><th>#</th><th style="text-align:left">Регион</th><th>Займов</th><th>Доля</th><th>Городов</th></tr></thead><tbody>` +
+    data.regions.map((r, i) => `<tr data-key="${r.key}" class="${r.key === selected ? 'selected' : ''}">
+      <td>${r.key === 'unknown' ? '—' : i + 1}</td>
+      <td class="name" style="text-align:left">${esc(r.name)}${r.key !== 'unknown' && !geo.features.some(f => f.properties.key === r.key) ? ' <span style="color:var(--muted)">(нет на карте)</span>' : ''}</td>
+      <td class="bar" style="--w:${(r.count / maxCount * 100).toFixed(1)}%"><span>${nf.format(r.count)}</span></td>
+      <td>${pct(r.count, n)}</td><td>${nf.format(r.cities_total)}</td>
+    </tr>`).join('') + '</tbody>';
+
+  renderDetails();
+
+  const notes = [`Период по дате заявки: ${longFmt.format(parse(data.from))} — ${longFmt.format(parse(data.to))}.`,
+    `Займ считается выданным, если у заявки есть статус 12.`,
+    `Если регион в выбранном адресе не распознан, берётся другой адрес заявки.`];
+  if (data.unknown_raw.length) notes.push(`Не удалось определить регион: ${data.unknown_raw.map(([v, c]) => `«${esc(v)}» — ${c}`).join(', ')}.`);
+  if (data.not_in_queues) notes.push(`Не найдено в queues: ${nf.format(data.not_in_queues)} выданных займов.`);
+  if (data.error) notes.push(`<span class="err">Удалённая база недоступна, показаны данные из кэша: ${esc(data.error)}</span>`);
+  $('note').innerHTML = notes.join(' ');
+}
+
+function renderDetails() {
+  const n = data.total;
+  const r = selected && byKey()[selected];
+  if (!r) {
+    const top = data.regions.filter(x => x.key !== 'unknown').slice(0, 10);
+    $('details').innerHTML = `<h2>Топ-10 регионов</h2><div class="muted" style="margin-bottom:10px">Выберите регион на карте или в таблице, чтобы увидеть города</div>
+      <table><thead><tr><th>Регион</th><th>Займов</th><th>Доля</th></tr></thead><tbody>
+      ${top.map(x => `<tr data-key="${x.key}" style="cursor:pointer"><td class="name">${esc(x.name)}</td><td>${nf.format(x.count)}</td><td>${pct(x.count, n)}</td></tr>`).join('')}
+      </tbody></table>`;
+    return;
+  }
+  const maxCity = Math.max(1, ...r.cities.map(c => c[1]));
+  $('details').innerHTML = `
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+      <h2>${esc(r.name)}</h2><button type="button" id="clearSel" style="font:inherit;font-size:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:6px;padding:2px 8px;cursor:pointer">Сбросить</button>
+    </div>
+    <div class="big">${nf.format(r.count)} <span class="muted" style="font-size:13px;font-weight:400">займов · ${pct(r.count, n)} от всех</span></div>
+    <div style="height:14px"></div>
+    <h2 style="font-size:14px;margin-bottom:6px">Города${r.cities_total > r.cities.length ? ` (топ-${r.cities.length} из ${nf.format(r.cities_total)})` : ''}</h2>
+    <table><thead><tr><th>Город</th><th>Займов</th></tr></thead><tbody>
+    ${r.cities.map(([c, k]) => `<tr><td class="name">${esc(c)}</td><td class="bar" style="--w:${(k / maxCity * 100).toFixed(1)}%"><span>${nf.format(k)}</span></td></tr>`).join('')}
+    </tbody></table>
+    <div class="muted" style="margin-top:8px">Город — из того же адреса, что и регион; записи без города собраны в «(город не указан)».</div>`;
+  $('clearSel').onclick = () => select(null);
+}
+
+function select(key) {
+  selected = selected === key ? null : key;
+  render();
+}
+
+const tipEl = $('tip');
+function tip(e, key, name) {
+  const r = byKey()[key];
+  tipEl.innerHTML = `<b>${esc(name)}</b><br>` + (r
+    ? `Займов: ${nf.format(r.count)} (${pct(r.count, data.total)})`
+    : 'Нет выдач за период');
+  tipEl.style.display = 'block';
+  const x = Math.min(e.clientX + 14, innerWidth - tipEl.offsetWidth - 8);
+  const y = e.clientY + 14 + tipEl.offsetHeight > innerHeight ? e.clientY - tipEl.offsetHeight - 10 : e.clientY + 14;
+  tipEl.style.left = x + 'px'; tipEl.style.top = y + 'px';
+}
+function hideTip() { tipEl.style.display = 'none'; }
+
+$('filters').onsubmit = e => { e.preventDefault(); load($('from').value, $('to').value); };
+document.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => load(...preset(b.dataset.preset)));
+$('address').onchange = () => load($('from').value, $('to').value);
+$('regions').addEventListener('click', e => { const tr = e.target.closest('tr[data-key]'); if (tr) select(tr.dataset.key); });
+$('details').addEventListener('click', e => { const tr = e.target.closest('tr[data-key]'); if (tr) select(tr.dataset.key); });
+let resizeTimer;
+addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => data && render(), 150); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => data && render());
+
+const params = new URLSearchParams(location.search);
+if (params.get('address')) $('address').value = params.get('address');
+load(params.get('from'), params.get('to'));
+</script>
+</body>
+</html>

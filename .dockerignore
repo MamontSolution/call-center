@@ -1,0 +1,4 @@
+cf.db*
+.env
+data/
+cf_*.csv

@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Время между статусами</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f4f2;
+  --surface: #fcfcfb;
+  --border: #e4e3df;
+  --grid: #ecebe7;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --muted: #8a8984;
+  --heat: 42, 120, 214;
+  --sticky: #fcfcfb;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --border: #2c2c2a; --grid: #262624;
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8d8c85; --heat: 57, 135, 229; --sticky: #1a1a19;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1a1a19; --border: #2c2c2a; --grid: #262624;
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8d8c85; --heat: 57, 135, 229; --sticky: #1a1a19;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 1600px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { margin: 0; font-size: 22px; font-weight: 650; }
+nav.pages { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+nav.pages a { color: var(--text-2); text-decoration: none; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); }
+nav.pages a.active { color: var(--text); border-color: rgb(var(--heat)); font-weight: 600; }
+.sub { color: var(--text-2); margin: 4px 0 16px; }
+.filters {
+  display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px;
+}
+.filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
+.filters input, .filters select, .filters button {
+  font: inherit; font-size: 14px; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; height: 34px;
+}
+.filters button { cursor: pointer; background: var(--surface); }
+.filters button:hover { border-color: var(--muted); }
+.filters button.primary { background: rgb(var(--heat)); border-color: rgb(var(--heat)); color: #fff; }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.spacer { flex: 1; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+.kpi .label { color: var(--text-2); font-size: 12px; }
+.kpi .value { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.table-wrap { overflow: auto; max-height: calc(100vh - 120px); }
+table { border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { padding: 6px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; text-align: right; }
+thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--sticky); color: var(--muted);
+  font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none;
+}
+thead th:hover { color: var(--text); }
+th.user, td.user { position: sticky; left: 0; z-index: 1; background: var(--sticky); text-align: left; min-width: 240px; border-right: 1px solid var(--border); }
+thead th.user { z-index: 3; }
+td.total, th.total { border-left: 1px solid var(--border); font-weight: 600; }
+td .n { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }
+td.empty { color: var(--muted); }
+tr.all td { font-weight: 600; border-top: 2px solid var(--border); position: sticky; bottom: 0; background: var(--sticky); }
+tr.all td.user { z-index: 2; }
+tr.nouser td.user { color: var(--text-2); font-style: italic; }
+.weekend { color: var(--text-2); }
+.legend { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); padding: 10px 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.legend .scale { width: 140px; height: 10px; border-radius: 3px; background: linear-gradient(to right, rgba(var(--heat), .04), rgba(var(--heat), .5)); }
+.note { color: var(--muted); font-size: 12px; margin-top: 12px; }
+#status { color: var(--muted); padding: 24px 16px; }
+h2.section { margin: 36px 0 0; font-size: 19px; font-weight: 650; }
+#hTable th.hour, #hTable td.hour { position: sticky; left: 0; z-index: 1; background: var(--sticky); text-align: left; min-width: 120px; border-right: 1px solid var(--border); }
+#hTable thead th.hour { z-index: 3; }
+#hTable thead th { cursor: default; }
+#hTable tr.off td { color: var(--muted); }
+#hTable tr.off td.hour { text-decoration: line-through; }
+.dd { position: relative; }
+.dd summary {
+  list-style: none; cursor: pointer; font-size: 14px; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 28px 6px 10px; height: 34px; min-width: 150px;
+  position: relative; white-space: nowrap;
+}
+.dd summary::-webkit-details-marker { display: none; }
+.dd summary::after { content: "▾"; position: absolute; right: 10px; color: var(--muted); }
+.dd[open] summary { border-color: var(--muted); }
+.hours { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; padding: 4px; }
+.hours label { justify-content: center; padding: 6px 0; border: 1px solid var(--border); border-radius: 6px; font-variant-numeric: tabular-nums; }
+.hours label:has(input:checked) { background: rgba(198, 40, 40, .16); border-color: rgba(198, 40, 40, .55); text-decoration: line-through; color: var(--text-2); }
+.hours input { display: none; }
+.dd-hint { font-size: 11px; color: var(--muted); padding: 4px 8px 2px; max-width: 260px; }
+.st-select { max-width: 240px; }
+#stSwap { font: inherit; height: 34px; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 8px; padding: 0 10px; cursor: pointer; }
+.dd-panel {
+  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 220px; max-height: 340px; overflow: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+}
+.dd-panel label { flex-direction: row; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; font-size: 13px; color: var(--text); cursor: pointer; }
+.dd-panel label:hover { background: var(--bg); }
+.dd-panel label .cnt { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dd-panel input { height: auto; }
+.dd-actions { display: flex; gap: 6px; padding: 4px 4px 8px; border-bottom: 1px solid var(--grid); margin-bottom: 4px; }
+.dd-actions button { height: 28px; font-size: 12px; padding: 2px 8px; }
+.howto {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px;
+  font-size: 13px; color: var(--text-2); display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 8px 32px;
+}
+.howto b { color: var(--text); font-weight: 600; }
+.howto p { margin: 0; }
+td[data-user] { cursor: pointer; }
+td[data-user]:hover { outline: 2px solid rgb(var(--heat)); outline-offset: -2px; }
+dialog#apps {
+  width: min(1500px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--border);
+  border-radius: 14px; background: var(--surface); color: var(--text); box-shadow: 0 16px 48px rgba(0, 0, 0, .3);
+}
+dialog#apps::backdrop { background: rgba(0, 0, 0, .45); }
+.apps-head { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.apps-head h2 { margin: 0; font-size: 17px; }
+.apps-head .sub { margin: 4px 0 0; font-size: 13px; }
+.apps-head button { font: inherit; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 8px; padding: 4px 12px; cursor: pointer; }
+.apps-body { overflow: auto; max-height: calc(100vh - 160px); }
+#appsTable { width: 100%; }
+#appsTable th { position: sticky; top: 0; background: var(--sticky); cursor: default; }
+#appsTable td, #appsTable th { text-align: left; }
+#appsTable td.num, #appsTable th.num { text-align: right; }
+#appsTable td.phone a { color: inherit; }
+#appsTable .tid { color: var(--muted); font-size: 11px; }
+#appsTable .stname { font-size: 11px; font-weight: 400; color: var(--muted); white-space: normal; min-width: 90px; max-width: 130px; line-height: 1.25; }
+#appsTable th.st, #appsTable td.st { text-align: center; }
+#appsTable th.key { color: var(--text); }
+#appsTable td.key { background: rgba(var(--heat), .12); font-weight: 600; }
+#tip {
+  position: fixed; pointer-events: none; z-index: 10; background: var(--text); color: var(--bg);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.5; max-width: 280px; display: none;
+}
+</style>
+</head>
+<body>
+<main>
+  <nav class="pages"><a href="/call-centar" class="active">Время между статусами</a><a href="/map">Карта выдач</a></nav>
+  <h1 id="title">Время между статусами заявки</h1>
+  <div class="sub" id="subtitle">&nbsp;</div>
+
+  <form class="filters" id="filters">
+    <label>От статуса<select id="stFrom" class="st-select"><option value="6">6</option></select></label>
+    <button type="button" id="stSwap" title="Поменять местами" style="align-self:flex-end">⇄</button>
+    <label>До статуса<select id="stTo" class="st-select"><option value="10">10</option></select></label>
+    <label>С даты<input type="date" id="from" required></label>
+    <label>По дату<input type="date" id="to" required></label>
+    <div class="presets">
+      <button type="button" data-preset="week">Эта неделя</button>
+      <button type="button" data-preset="prevweek">Прошлая неделя</button>
+      <button type="button" data-preset="month">30 дней</button>
+    </div>
+    <label>Показатель
+      <select id="agg">
+        <option value="avg">Среднее время</option>
+        <option value="median">Медиана</option>
+      </select>
+    </label>
+    <label>Сотрудник<input type="search" id="search" placeholder="Поиск по ФИО"></label>
+    <label title="Заявки, у которых время интервала больше указанного, не попадают в расчёт. Пусто — учитываются все">Не учитывать дольше, мин
+      <input type="number" id="maxMin" min="0" step="1" placeholder="без ограничения" style="width:150px">
+    </label>
+    <label><span style="white-space:nowrap">Не учитывать часы статуса <span id="hoursStatus">6</span></span>
+      <details class="dd" id="hoursDd">
+        <summary id="hoursSummary">Все часы</summary>
+        <div class="dd-panel">
+          <div class="dd-actions">
+            <button type="button" id="hoursReset">Сбросить</button>
+            <button type="button" id="hoursNight">Ночь 21–09</button>
+          </div>
+          <div class="hours" id="hoursGrid"></div>
+          <div class="dd-hint">Отмеченные часы исключаются: заявка не учитывается, если её статус пришёл в этот час (00 = 00:00–00:59).</div>
+        </div>
+      </details>
+    </label>
+    <label>Партнёр (token)
+      <details class="dd" data-field="token">
+        <summary>Все</summary>
+        <div class="dd-panel">
+          <div class="dd-actions"><button type="button" class="dd-reset">Сбросить — все партнёры</button></div>
+          <div class="dd-list"></div>
+        </div>
+      </details>
+    </label>
+    <label>skm
+      <details class="dd" data-field="skm">
+        <summary>Все</summary>
+        <div class="dd-panel">
+          <div class="dd-actions"><button type="button" class="dd-reset">Сбросить — все skm</button></div>
+          <div class="dd-list"></div>
+        </div>
+      </details>
+    </label>
+    <button type="submit" class="primary">Показать</button>
+    <span class="spacer"></span>
+    <button type="button" id="csv">Скачать CSV</button>
+  </form>
+
+  <div class="kpis" id="kpis"></div>
+  <div class="howto">
+    <p id="howtoTime"><b>Время заявки</b> = время первого конечного статуса − время первого начального статуса той же заявки (связь по transaction_id).</p>
+    <p><b>Среднее</b> = сумма времени всех заявок в ячейке ÷ количество этих заявок. Несколько заявок, которые висели по несколько дней, сильно его увеличивают.</p>
+    <p><b>Медиана</b> — время заявки, которая оказалась ровно посередине, если отсортировать заявки ячейки от быстрой к долгой: у половины заявок время меньше, у половины больше. При чётном количестве — среднее двух средних значений. Редкие долгие заявки на неё почти не влияют.</p>
+    <p><b>«За период» и «Все сотрудники»</b> считаются заново по всем заявкам строки или столбца, а не как среднее от дневных значений. Маленькое число в ячейке — сколько заявок вошло в расчёт.</p>
+  </div>
+  <div class="card">
+    <div id="status">Загрузка…</div>
+    <div class="table-wrap"><table id="table"></table></div>
+    <div class="legend" id="legend" hidden>
+      <span>быстрее</span><span class="scale"></span><span>дольше</span>
+      <span>· в ячейке время и количество заявок · нажмите на заголовок, чтобы отсортировать</span>
+    </div>
+  </div>
+  <div class="note" id="note"></div>
+
+  <h2 class="section" id="hTitle">Время по часам</h2>
+  <div class="sub" id="hSub"></div>
+  <div class="card">
+    <div class="table-wrap"><table id="hTable"></table></div>
+    <div class="legend">
+      <span>быстрее</span><span class="scale"></span><span>дольше</span>
+      <span>· в ячейке время и количество заявок · нажмите на значение, чтобы открыть заявки</span>
+    </div>
+  </div>
+  <div class="note" id="hNote"></div>
+</main>
+<div id="tip"></div>
+<dialog id="apps">
+  <div class="apps-head">
+    <div><h2 id="appsTitle"></h2><div class="sub" id="appsSub"></div></div>
+    <div style="display:flex;gap:8px"><button type="button" id="appsCsv">CSV</button><button type="button" id="appsClose">Закрыть</button></div>
+  </div>
+  <div class="apps-body">
+    <div id="appsStatus" style="padding:16px 20px;color:var(--muted)"></div>
+    <table id="appsTable"></table>
+  </div>
+</dialog>
+
+<script>
+const nf = new Intl.NumberFormat('ru-RU');
+const dayFmt = new Intl.DateTimeFormat('ru-RU', {day: '2-digit', month: '2-digit'});
+const wdFmt = new Intl.DateTimeFormat('ru-RU', {weekday: 'short'});
+const longFmt = new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric'});
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const NO_USER = 'Без сотрудника';
+const ALL_USERS = '\u0000all';
+const $ = id => document.getElementById(id);
+
+let data = null, rows = [], items = [], viewItems = [], shownUsers = new Set(), excluded = 0, hoursExcluded = 0, hoursOff = new Set(), sort = {key: 'count', dir: -1};
+
+function dur(min) {
+  if (min == null) return '—';
+  if (min < 1) return '<1 мин';
+  if (min < 60) return Math.round(min) + ' мин';
+  const h = Math.floor(min / 60), m = Math.round(min % 60);
+  if (h < 24) return h + ' ч' + (m ? ' ' + m + ' мин' : '');
+  const d = Math.floor(h / 24), hh = h % 24;
+  return d + ' д' + (hh ? ' ' + hh + ' ч' : '');
+}
+
+function stat(values) {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return {
+    n: s.length,
+    avg: s.reduce((a, b) => a + b, 0) / s.length,
+    median: s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2,
+    min: s[0],
+    max: s[s.length - 1],
+  };
+}
+
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const parse = s => new Date(s + 'T00:00:00');
+
+function preset(name) {
+  const last = parse(data ? data.last_event.slice(0, 10) : iso(new Date()));
+  const monday = new Date(last); monday.setDate(last.getDate() - (last.getDay() + 6) % 7);
+  if (name === 'week') return [iso(monday), iso(last)];
+  if (name === 'prevweek') {
+    const a = new Date(monday); a.setDate(a.getDate() - 7);
+    const b = new Date(monday); b.setDate(b.getDate() - 1);
+    return [iso(a), iso(b)];
+  }
+  const a = new Date(last); a.setDate(a.getDate() - 29);
+  return [iso(a), iso(last)];
+}
+
+async function load(from, to) {
+  $('status').hidden = false;
+  $('status').textContent = 'Загрузка…';
+  const q = new URLSearchParams();
+  if (from) q.set('from', from);
+  if (to) q.set('to', to);
+  q.set('interval', `${$('stFrom').value}-${$('stTo').value}`);
+  try {
+    const res = await fetch('/api/report?' + q);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    data = await res.json();
+  } catch (e) {
+    $('status').textContent = 'Не удалось загрузить данные: ' + e.message;
+    return;
+  }
+  $('from').value = data.from;
+  $('to').value = data.to;
+  $('to').max = $('from').max = data.last_event.slice(0, 10);
+  // Списки статусов — все статусы из базы, подписи из колонки comment
+  for (const [id, cur] of [['stFrom', data.start.status], ['stTo', data.end.status]]) {
+    $(id).innerHTML = [...data.statuses].sort(statusOrder).map(st =>
+      `<option value="${esc(st)}">${esc(st)} · ${esc(data.status_names[st] || 'без названия')}</option>`).join('');
+    $(id).value = cur;
+  }
+  $('hoursStatus').textContent = data.start.status;
+  const st = (x, full) => `${x.status}${full ? ' «' + x.name + '»' : ''}`;
+  $('subtitle').textContent = `От статуса ${st(data.start, 1)} до статуса ${st(data.end, 1)}, по сотрудникам и дням статуса ${data.end.status}`;
+  $('howtoTime').innerHTML = `<b>Время заявки</b> = время первого статуса ${esc(st(data.end, 1))} − время первого статуса ${esc(st(data.start, 1))} той же заявки (связь по transaction_id).`;
+  Object.keys(multi).forEach(buildMulti);
+  build();
+}
+
+function saveUrl() {
+  const q = new URLSearchParams({interval: data.interval, from: data.from, to: data.to, agg: $('agg').value});
+  for (const [f, m] of Object.entries(multi)) if (m.sel.size) q.set(f, [...m.sel].join(','));
+  if (maxMin() != null) q.set('max', maxMin());
+  if (hoursOff.size) q.set('hours', [...hoursOff].sort((a, b) => a - b).join(','));
+  history.replaceState(null, '', '?' + q);
+}
+
+// Порог в минутах: заявки с большим временем интервала исключаются из расчёта
+function maxMin() {
+  const v = $('maxMin').value.trim();
+  return v === '' || isNaN(+v) ? null : +v;
+}
+
+// Фильтры с множественным выбором: значение берётся из строки конечного статуса заявки
+const numSort = (a, b) => (+a - +b) || a.localeCompare(b, 'ru');
+const byLabel = f => (a, b) => multi[f].label(a).localeCompare(multi[f].label(b), 'ru') || numSort(a, b);
+const multi = {
+  // token — id партнёра, показываем его name из справочника
+  token: {sel: new Set(), label: v => (data && data.partners[v]) || v || '(пусто)', sort: (a, b) => byLabel('token')(a, b)},
+  skm: {sel: new Set(), label: v => v || '(пусто)', sort: (a, b) => a.localeCompare(b, 'ru')},
+};
+const dd = f => document.querySelector(`.dd[data-field="${f}"]`);
+const selected = f => [...multi[f].sel].sort(multi[f].sort);
+
+function buildMulti(f) {
+  const counts = new Map();
+  for (const it of data.items) counts.set(it[f], (counts.get(it[f]) || 0) + 1);
+  for (const v of multi[f].sel) if (!counts.has(v)) counts.set(v, 0);
+  dd(f).querySelector('.dd-list').innerHTML = [...counts.keys()].sort(multi[f].sort).map(v =>
+    `<label><input type="checkbox" value="${esc(v)}"${multi[f].sel.has(v) ? ' checked' : ''}>${esc(multi[f].label(v))}<span class="cnt">${nf.format(counts.get(v))}</span></label>`
+  ).join('') || '<div style="padding:6px 8px;color:var(--muted)">Нет данных</div>';
+  updateSummary(f);
+}
+
+function updateSummary(f) {
+  const sel = selected(f).map(multi[f].label);
+  dd(f).querySelector('summary').textContent = !sel.length ? 'Все' : sel.length <= 2 ? sel.join(', ') : `Выбрано: ${sel.length}`;
+}
+
+function setMulti(f, next) {
+  multi[f].sel = next;
+  dd(f).querySelectorAll('.dd-list input').forEach(i => i.checked = next.has(i.value));
+  updateSummary(f);
+  build();
+}
+
+const activeFilters = () => Object.keys(multi).filter(f => multi[f].sel.size);
+
+function build() {
+  saveUrl();
+  const active = activeFilters();
+  const picked = data.items.filter(it => active.every(f => multi[f].sel.has(it[f])));
+  const byHour = hoursOff.size ? picked.filter(it => !hoursOff.has(+it.start_at.slice(11, 13))) : picked;
+  hoursExcluded = picked.length - byHour.length;
+  const limit = maxMin();
+  items = limit == null ? byHour : byHour.filter(it => it.min <= limit);
+  excluded = byHour.length - items.length;
+  const byUser = new Map();
+  for (const it of items) {
+    const u = it.user || NO_USER;
+    if (!byUser.has(u)) byUser.set(u, {name: u, all: [], days: {}});
+    const r = byUser.get(u);
+    r.all.push(it.min);
+    (r.days[it.day] ||= []).push(it.min);
+  }
+  rows = [...byUser.values()].map(r => ({
+    name: r.name,
+    total: stat(r.all),
+    days: Object.fromEntries(data.days.map(d => [d, stat(r.days[d] || [])])),
+  }));
+  render();
+}
+
+function render() {
+  const agg = $('agg').value;
+  const q = $('search').value.trim().toLowerCase();
+  const val = s => s ? s[agg] : null;
+
+  let list = rows.filter(r => !q || r.name.toLowerCase().includes(q));
+  const keyOf = r => sort.key === 'name' ? r.name
+    : sort.key === 'count' ? r.total.n
+    : sort.key === 'total' ? r.total[agg]
+    : val(r.days[sort.key]);
+  list.sort((a, b) => {
+    if ((a.name === NO_USER) !== (b.name === NO_USER)) return a.name === NO_USER ? 1 : -1;
+    const ka = keyOf(a), kb = keyOf(b);
+    if (ka == null && kb == null) return 0;
+    if (ka == null) return 1;
+    if (kb == null) return -1;
+    return (typeof ka === 'string' ? ka.localeCompare(kb, 'ru') : ka - kb) * sort.dir;
+  });
+
+  // Итоговая строка — по всем заявкам, попавшим в фильтр
+  const shown = new Set(list.map(r => r.name));
+  shownUsers = shown;
+  const inView = items.filter(it => shown.has(it.user || NO_USER));
+  viewItems = inView;
+  const allTotal = stat(inView.map(it => it.min));
+  const allDays = Object.fromEntries(data.days.map(d => [d, stat(inView.filter(it => it.day === d).map(it => it.min))]));
+
+  // Шкала подсветки — по 95-му перцентилю значений ячеек, чтобы выбросы не съедали контраст
+  const cellVals = list.flatMap(r => data.days.map(d => val(r.days[d]))).filter(v => v != null).sort((a, b) => a - b);
+  const cap = cellVals.length ? cellVals[Math.floor((cellVals.length - 1) * 0.95)] || 1 : 1;
+  const shade = v => v == null ? '' : `background: rgba(var(--heat), ${(0.04 + 0.46 * Math.min(v / cap, 1)).toFixed(3)})`;
+
+  const arrow = k => sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : '';
+  const head = `<thead><tr>
+    <th class="user" data-sort="name">Сотрудник${arrow('name')}</th>
+    ${data.days.map(d => {
+      const dt = parse(d), we = dt.getDay() === 0 || dt.getDay() === 6;
+      return `<th data-sort="${d}" class="${we ? 'weekend' : ''}">${wdFmt.format(dt)}<br>${dayFmt.format(dt)}${arrow(d)}</th>`;
+    }).join('')}
+    <th class="total" data-sort="total">За период${arrow('total')}</th>
+    <th data-sort="count">Заявок${arrow('count')}</th>
+  </tr></thead>`;
+
+  const cell = (s, cls = '', user = '', day = '') => s
+    ? `<td class="${cls}" style="${cls ? '' : shade(s[agg])}" data-tip="${tipText(s)}\nНажмите, чтобы открыть заявки" data-user="${esc(user)}" data-day="${day}">${dur(s[agg])}<span class="n">${nf.format(s.n)}</span></td>`
+    : `<td class="empty ${cls}">·</td>`;
+  const body = list.map(r => `<tr class="${r.name === NO_USER ? 'nouser' : ''}">
+    <td class="user">${esc(r.name)}</td>
+    ${data.days.map(d => cell(r.days[d], '', r.name, d)).join('')}
+    ${cell(r.total, 'total', r.name)}
+    <td>${nf.format(r.total.n)}</td>
+  </tr>`).join('');
+  const foot = allTotal ? `<tr class="all">
+    <td class="user">Все сотрудники</td>
+    ${data.days.map(d => cell(allDays[d], 'sum', ALL_USERS, d)).join('')}
+    ${cell(allTotal, 'total', ALL_USERS)}
+    <td>${nf.format(allTotal.n)}</td>
+  </tr>` : '';
+
+  $('table').innerHTML = head + '<tbody>' + body + foot + '</tbody>';
+  $('status').hidden = list.length > 0;
+  $('status').textContent = `Нет заявок со статусом ${data.end.status} за выбранный период` + (activeFilters().length ? ' и фильтров' : '');
+  $('legend').hidden = !list.length;
+
+  const users = list.filter(r => r.name !== NO_USER).length;
+  const noUser = rows.find(r => r.name === NO_USER);
+  $('kpis').innerHTML = [
+    [`Заявок со статусом ${data.end.status}`, allTotal ? nf.format(allTotal.n) : '0'],
+    [`${agg === 'avg' ? 'Среднее время' : 'Медиана'} ${arrowLabel()}`, allTotal ? dur(allTotal[agg]) : '—'],
+    [agg === 'avg' ? 'Медиана' : 'Среднее', allTotal ? dur(allTotal[agg === 'avg' ? 'median' : 'avg']) : '—'],
+    ['Сотрудников', nf.format(users)],
+    ...(hoursOff.size ? [[`Исключено по часам статуса ${data.start.status}`, nf.format(hoursExcluded)]] : []),
+    ...(maxMin() != null ? [[`Исключено (дольше ${dur(maxMin())})`, nf.format(excluded)]] : []),
+  ].map(([l, v]) => `<div class="kpi"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('');
+
+  $('note').innerHTML =
+    `Период: ${longFmt.format(parse(data.from))} — ${longFmt.format(parse(data.to))}` +
+    activeFilters().map(f => `, ${f}: ${selected(f).map(multi[f].label).join(', ')}`).join('') + '. ' +
+    (hoursOff.size ? `Не учтено ${nf.format(hoursExcluded)} заявок, у которых статус ${data.start.status} пришёл в часы ${hoursText()}. ` : '') +
+    (maxMin() != null ? `Не учтено ${nf.format(excluded)} заявок, у которых время ${arrowLabel()} больше ${nf.format(maxMin())} мин (${dur(maxMin())}). ` : '') +
+    `День — дата статуса ${data.end.status}. ` +
+    `Время считается от первого статуса ${data.start.status} до первого статуса ${data.end.status} той же заявки (связь по transaction_id). ` +
+    `Сотрудник, партнёр и skm берутся из строки статуса ${data.end.status}; если сотрудника там нет — из других строк заявки` +
+    (noUser ? `; заявок без сотрудника: ${nf.format(noUser.total.n)}` : '') + '. ' +
+    (data.no_start ? `Не учтено ${nf.format(data.no_start)} заявок со статусом ${data.end.status} без статуса ${data.start.status}. ` : '') +
+    (data.negative ? `Не учтено ${nf.format(data.negative)} заявок, где статус ${data.end.status} раньше ${data.start.status}. ` : '') +
+    `Данные в базе по ${data.last_event.slice(0, 16)}` +
+    (data.sync.enabled
+      ? (data.sync.error
+          ? ` · <span style="color:#c62828">синхронизация с удалённой базой не удалась: ${esc(data.sync.error)}</span>`
+          : data.sync.last ? ` · синхронизировано с удалённой базой в ${data.sync.last.slice(11, 19)}` : ' · идёт первая синхронизация')
+      : ' · локальная копия из дампа') +
+    `. Максимальный период — ${data.max_days} дн.`;
+  renderHours();
+}
+
+// Второй отчёт: строки — час начального статуса, столбцы — день начального статуса.
+// Берутся те же заявки, что в первой таблице (все фильтры и поиск по сотруднику учитываются).
+const hourStart = it => +it.start_at.slice(11, 13);
+const dayStart = it => it.start_at.slice(0, 10);
+
+function renderHours() {
+  const agg = $('agg').value;
+  const days = new Set(data.days);
+  const inRange = viewItems.filter(it => days.has(dayStart(it)));
+  const outside = viewItems.length - inRange.length;
+  const grid = Array.from({length: 24}, () => ({}));
+  const byHour = Array.from({length: 24}, () => []);
+  const byDay = {};
+  for (const it of inRange) {
+    const h = hourStart(it), d = dayStart(it);
+    (grid[h][d] ||= []).push(it.min);
+    byHour[h].push(it.min);
+    (byDay[d] ||= []).push(it.min);
+  }
+  const cells = grid.map(row => Object.fromEntries(data.days.map(d => [d, stat(row[d] || [])])));
+  const vals = cells.flatMap(row => data.days.map(d => row[d] && row[d][agg])).filter(v => v != null).sort((a, b) => a - b);
+  const cap = vals.length ? vals[Math.floor((vals.length - 1) * 0.95)] || 1 : 1;
+  const shade = v => `background: rgba(var(--heat), ${(0.04 + 0.46 * Math.min(v / cap, 1)).toFixed(3)})`;
+  const cell = (s, day, hour, cls = '') => s
+    ? `<td class="${cls}" style="${cls ? '' : shade(s[agg])}" data-tip="${tipText(s)}\nНажмите, чтобы открыть заявки" data-day="${day}" data-hour="${hour}">${dur(s[agg])}<span class="n">${nf.format(s.n)}</span></td>`
+    : `<td class="empty ${cls}">·</td>`;
+
+  const st = data.start.status;
+  $('hTitle').textContent = `${agg === 'avg' ? 'Среднее время' : 'Медиана времени'} перехода ${arrowLabel()} по часам`;
+  $('hSub').textContent = `Строки — час, в который пришёл статус ${st} «${data.start.name}», столбцы — день статуса ${st}`;
+  $('hTable').innerHTML = `<thead><tr>
+      <th class="hour">Час статуса ${st}</th>
+      ${data.days.map(d => {
+        const dt = parse(d), we = dt.getDay() === 0 || dt.getDay() === 6;
+        return `<th class="${we ? 'weekend' : ''}">${wdFmt.format(dt)}<br>${dayFmt.format(dt)}</th>`;
+      }).join('')}
+      <th class="total">За период</th><th>Заявок</th>
+    </tr></thead><tbody>` +
+    cells.map((row, h) => {
+      const off = hoursOff.has(h), tot = stat(byHour[h]);
+      return `<tr class="${off ? 'off' : ''}">
+        <td class="hour">${hh(h)}:00–${hh(h)}:59${off ? ' <span class="n">исключён</span>' : ''}</td>
+        ${data.days.map(d => cell(row[d], d, h)).join('')}
+        ${cell(tot, '', h, 'total')}
+        <td>${tot ? nf.format(tot.n) : '·'}</td>
+      </tr>`;
+    }).join('') +
+    (inRange.length ? `<tr class="all">
+      <td class="hour">Все часы</td>
+      ${data.days.map(d => cell(stat(byDay[d] || []), d, '', 'sum')).join('')}
+      ${cell(stat(inRange.map(it => it.min)), '', '', 'total')}
+      <td>${nf.format(inRange.length)}</td>
+    </tr>` : '') + '</tbody>';
+  $('hNote').textContent =
+    `Те же заявки, что в таблице выше, с теми же фильтрами. ` +
+    (outside ? `Не показано ${nf.format(outside)} заявок, у которых статус ${st} пришёл раньше выбранного периода (их статус ${data.end.status} — в периоде).` : '');
+}
+
+function openHour(day, hour) {
+  const list = viewItems.filter(it => days0(it, day) && (hour === '' || hourStart(it) === +hour));
+  const when = (day ? longFmt.format(parse(day)) : `${longFmt.format(parse(data.from))} — ${longFmt.format(parse(data.to))}`) +
+    (hour !== '' ? `, статус ${data.start.status} в ${hh(hour)}:00–${hh(hour)}:59` : '');
+  openList('Все сотрудники', when, list);
+}
+const days0 = (it, day) => day ? dayStart(it) === day : data.days.includes(dayStart(it));
+
+const arrowLabel = () => `${data.start.status} → ${data.end.status}`;
+
+function tipText(s) {
+  return esc(`Заявок: ${s.n}\nСреднее: ${dur(s.avg)}\nМедиана: ${dur(s.median)}\nМин: ${dur(s.min)} · Макс: ${dur(s.max)}`);
+}
+
+// Список заявок ячейки: время из postback_proxy, клиент (дата, ФИО, телефон) — из queues по transaction_id
+const dtFmt = s => s ? `${s.slice(8, 10)}.${s.slice(5, 7)} ${s.slice(11, 16)}` : '—';
+let appsRows = [], appsName = '';
+
+function openApps(user, day) {
+  const list = items
+    .filter(it => user === ALL_USERS ? shownUsers.has(it.user || NO_USER) : (it.user || NO_USER) === user)
+    .filter(it => !day || it.day === day);
+  const who = user === ALL_USERS ? 'Все сотрудники' : user;
+  const when = day ? longFmt.format(parse(day)) : `${longFmt.format(parse(data.from))} — ${longFmt.format(parse(data.to))}`;
+  openList(who, when, list);
+}
+
+async function openList(who, when, list) {
+  list = [...list].sort((a, b) => a.end_at.localeCompare(b.end_at));
+  appsName = `${who}, ${when}`;
+  $('appsTitle').textContent = who;
+  $('appsSub').textContent = `${when} · ${nf.format(list.length)} заявок · время ${arrowLabel()}` +
+    activeFilters().map(f => ` · ${f}: ${selected(f).map(multi[f].label).join(', ')}`).join('') +
+    (hoursOff.size ? ` · без часов статуса ${data.start.status}: ${hoursText()}` : '') +
+    (maxMin() != null ? ` · без заявок дольше ${dur(maxMin())}` : '');
+  appsRows = list.map(it => ({...it, created: null, fio: null, phone: null, statuses: null}));
+  appsStatuses = [];
+  renderApps();
+  $('appsStatus').textContent = 'Загрузка…';
+  $('appsStatus').hidden = false;
+  $('apps').showModal();
+  try {
+    const res = await fetch('/api/applications', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                  body: JSON.stringify({ids: list.map(it => it.t)})});
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || 'HTTP ' + res.status);
+    appsRows.forEach(a => Object.assign(a, r.items[a.t] || {fio: '', phone: '', created: ''}, {statuses: r.statuses[a.t] || {}}));
+    appsStatuses = [...new Set(appsRows.flatMap(a => Object.keys(a.statuses)))].sort(statusOrder);
+    const missing = appsRows.filter(a => !r.items[a.t]).length;
+    const msg = [r.error ? 'Не удалось загрузить ФИО и телефоны: ' + r.error : '',
+                 !r.error && missing ? `Не найдено в queues: ${nf.format(missing)}` : ''].filter(Boolean).join(' · ');
+    $('appsStatus').hidden = !msg;
+    $('appsStatus').textContent = msg;
+  } catch (e) {
+    $('appsStatus').textContent = 'Не удалось загрузить данные: ' + e.message;
+  }
+  renderApps();
+}
+
+// Порядок колонок статусов: по воронке, затем отказы и прочие по номеру
+const FUNNEL_ORDER = ['1', '2', '6', '7', '10', '11', '12'];
+const statusOrder = (a, b) => {
+  const ia = FUNNEL_ORDER.indexOf(a), ib = FUNNEL_ORDER.indexOf(b);
+  return (ia < 0 ? 100 + +a : ia) - (ib < 0 ? 100 + +b : ib);
+};
+const statusName = st => data.status_names[st] || `Статус ${st}`;
+let appsStatuses = [];
+
+function renderApps() {
+  const loading = v => v == null ? '<span style="color:var(--muted)">…</span>' : esc(v) || '—';
+  const key = st => st === data.start.status || st === data.end.status;
+  $('appsTable').innerHTML = `<thead><tr>
+      <th>Дата заявки</th><th>ФИО</th><th>Телефон</th>
+      <th class="num">Время работы<div class="stname">${arrowLabel()}</div></th>
+      ${appsStatuses.map(st => `<th class="st${key(st) ? ' key' : ''}">${st}<div class="stname">${esc(statusName(st))}</div></th>`).join('')}
+      <th>Партнёр</th><th>skm</th>
+    </tr></thead><tbody>` +
+    appsRows.map(a => `<tr>
+      <td>${a.created === null ? loading(null) : dtFmt(a.created)}</td>
+      <td class="name">${loading(a.fio)}${a.fio !== null ? `<div class="tid">${esc(a.t)}</div>` : ''}</td>
+      <td class="phone">${a.phone ? `<a href="tel:${esc(a.phone)}">${esc(a.phone)}</a>` : loading(a.phone)}</td>
+      <td class="num"><b>${dur(a.min)}</b></td>
+      ${appsStatuses.map(st => `<td class="st${key(st) ? ' key' : ''}">${a.statuses && a.statuses[st] ? dtFmt(a.statuses[st]) : '<span style="color:var(--muted)">—</span>'}</td>`).join('')}
+      <td>${esc(multi.token.label(a.token))}</td><td>${esc(a.skm || '—')}</td>
+    </tr>`).join('') + '</tbody>';
+}
+
+function appsCsv() {
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const lines = [['Дата заявки', 'ФИО', 'Телефон', `Время работы ${arrowLabel()}, мин`,
+                  ...appsStatuses.map(st => q(`${st} ${statusName(st)}`)), 'Партнёр', 'skm', 'transaction_id'].join(';'),
+    ...appsRows.map(a => [a.created, q(a.fio), q(a.phone), Math.round(a.min),
+                          ...appsStatuses.map(st => (a.statuses && a.statuses[st]) || ''),
+                          q(multi.token.label(a.token)), q(a.skm), a.t].join(';'))];
+  const blob = new Blob(['﻿' + lines.join('\n') + '\n'], {type: 'text/csv;charset=utf-8'});
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `заявки_${appsName.replace(/[^\wа-яё.-]+/gi, '_')}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function csv() {
+  const agg = $('agg').value;
+  const lines = [['Сотрудник', ...data.days, 'За период', 'Заявок'].join(';')];
+  for (const tr of $('table').querySelectorAll('tbody tr')) {
+    const name = tr.querySelector('.user').textContent;
+    const r = rows.find(x => x.name === name);
+    if (!r) continue;
+    lines.push([`"${name.replace(/"/g, '""')}"`,
+      ...data.days.map(d => r.days[d] ? Math.round(r.days[d][agg]) : ''),
+      Math.round(r.total[agg]), r.total.n].join(';'));
+  }
+  const blob = new Blob(['﻿' + lines.join('\n') + '\n'], {type: 'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${data.interval}_${data.from}_${data.to}${activeFilters().map(f => `_${f}-${selected(f).map(multi[f].label).join('-')}`).join('')}${hoursOff.size ? '_hours-off-' + hoursText().replace(/, /g, '_') : ''}${maxMin() != null ? '_max-' + maxMin() + 'min' : ''}_${agg}_minutes.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+$('filters').onsubmit = e => { e.preventDefault(); load($('from').value, $('to').value); };
+document.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => load(...preset(b.dataset.preset)));
+$('maxMin').oninput = () => data && build();
+const changeInterval = () => {
+  if ($('stFrom').value === $('stTo').value) return alert('Выберите два разных статуса');
+  load($('from').value, $('to').value);
+};
+$('stFrom').onchange = changeInterval;
+$('stTo').onchange = changeInterval;
+$('stSwap').onclick = () => { [$('stFrom').value, $('stTo').value] = [$('stTo').value, $('stFrom').value]; changeInterval(); };
+$('agg').onchange = () => { if (data) { saveUrl(); render(); } };
+for (const f of Object.keys(multi)) {
+  dd(f).querySelector('.dd-list').addEventListener('change', e => {
+    const next = new Set(multi[f].sel);
+    e.target.checked ? next.add(e.target.value) : next.delete(e.target.value);
+    setMulti(f, next);
+  });
+  dd(f).querySelector('.dd-reset').onclick = () => setMulti(f, new Set());
+}
+// Исключаемые часы начального статуса (0–23)
+const hh = h => String(h).padStart(2, '0');
+function hoursText() {
+  const hs = [...hoursOff].sort((a, b) => a - b), parts = [];
+  for (let i = 0; i < hs.length; i++) {
+    let j = i;
+    while (j + 1 < hs.length && hs[j + 1] === hs[j] + 1) j++;
+    parts.push(i === j ? hh(hs[i]) : `${hh(hs[i])}–${hh(hs[j])}`);
+    i = j;
+  }
+  return parts.join(', ');
+}
+function setHours(next) {
+  hoursOff = next;
+  $('hoursGrid').querySelectorAll('input').forEach(i => i.checked = hoursOff.has(+i.value));
+  $('hoursSummary').textContent = hoursOff.size ? 'Без ' + hoursText() : 'Все часы';
+  if (data) build();
+}
+$('hoursGrid').innerHTML = Array.from({length: 24}, (_, h) => `<label><input type="checkbox" value="${h}">${hh(h)}</label>`).join('');
+$('hoursGrid').addEventListener('change', e => {
+  const next = new Set(hoursOff);
+  e.target.checked ? next.add(+e.target.value) : next.delete(+e.target.value);
+  setHours(next);
+});
+$('hoursReset').onclick = () => setHours(new Set());
+$('hoursNight').onclick = () => setHours(new Set([21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8]));
+
+document.addEventListener('click', e => {
+  document.querySelectorAll('.dd[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
+});
+$('search').oninput = () => data && render();
+$('csv').onclick = () => data && csv();
+$('appsClose').onclick = () => $('apps').close();
+$('appsCsv').onclick = appsCsv;
+$('apps').addEventListener('click', e => { if (e.target === $('apps')) $('apps').close(); });
+$('table').addEventListener('click', e => {
+  const td = e.target.closest('td[data-user]');
+  if (td) { tip.style.display = 'none'; openApps(td.dataset.user, td.dataset.day); return; }
+  const th = e.target.closest('th[data-sort]');
+  if (!th) return;
+  const k = th.dataset.sort;
+  sort = sort.key === k ? {key: k, dir: -sort.dir} : {key: k, dir: k === 'name' ? 1 : -1};
+  render();
+});
+$('hTable').addEventListener('click', e => {
+  const td = e.target.closest('td[data-hour]');
+  if (td) { tip.style.display = 'none'; openHour(td.dataset.day, td.dataset.hour); }
+});
+const tip = $('tip');
+const showTip = e => {
+  const td = e.target.closest('td[data-tip]');
+  if (!td) { tip.style.display = 'none'; return; }
+  tip.innerHTML = td.dataset.tip.replace(/\n/g, '<br>');
+  tip.style.display = 'block';
+  const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
+  const y = e.clientY + 14 + tip.offsetHeight > innerHeight ? e.clientY - tip.offsetHeight - 10 : e.clientY + 14;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+};
+for (const t of [$('table'), $('hTable')]) {
+  t.addEventListener('mousemove', showTip);
+  t.addEventListener('mouseleave', () => tip.style.display = 'none');
+}
+
+const params = new URLSearchParams(location.search);
+if (params.get('agg')) $('agg').value = params.get('agg');
+if (params.get('interval')) {
+  const [a, b] = params.get('interval').split('-');
+  $('stFrom').innerHTML = `<option value="${esc(a)}">${esc(a)}</option>`;
+  $('stTo').innerHTML = `<option value="${esc(b)}">${esc(b)}</option>`;
+}
+if (params.get('max')) $('maxMin').value = params.get('max');
+if (params.get('hours')) setHours(new Set(params.get('hours').split(',').map(Number).filter(h => h >= 0 && h < 24)));
+for (const f of Object.keys(multi)) if (params.get(f)) multi[f].sel = new Set(params.get(f).split(','));
+load(params.get('from'), params.get('to'));
+</script>
+</body>
+</html>
