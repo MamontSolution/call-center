@@ -39,11 +39,11 @@ DEFAULT_INTERVAL = ("6", "10")
 #   d_end   — первое время конечного статуса,
 #   user    — сотрудник из строки конечного статуса, а если там пусто — из последней строки заявки, где он указан
 #             (в строках статуса 6 user всегда пустой, поэтому связываем по transaction_id),
-#   token, skm — из строки конечного статуса.
+#   token, skm, tid — из строки конечного статуса.
 QUERY = """
 WITH e AS (
   SELECT transaction_id AS t, MIN(date) AS d_end, MAX(NULLIF(user, '')) AS user, MAX(token) AS token,
-    MAX(NULLIF(skm, '')) AS skm
+    MAX(NULLIF(skm, '')) AS skm, MAX(NULLIF(tid, '')) AS tid
   FROM postback_proxy INDEXED BY idx_date
   WHERE status = :end AND date >= :from AND date < :to
   GROUP BY transaction_id
@@ -56,7 +56,8 @@ SELECT
   COALESCE(e.user, (SELECT p.user FROM postback_proxy p
     WHERE p.transaction_id = e.t AND p.user <> '' ORDER BY p.id DESC LIMIT 1)) AS user,
   e.token,
-  e.skm
+  e.skm,
+  e.tid
 FROM e
 """
 FMT = "%Y-%m-%d %H:%M:%S"
@@ -125,7 +126,7 @@ def report(date_from, date_to, interval):
         db.close()
 
     items, no_start, negative = [], 0, 0
-    for t, d_end, d_start, user, token, skm in rows:
+    for t, d_end, d_start, user, token, skm, tid in rows:
         if not d_start:
             no_start += 1
             continue
@@ -133,7 +134,7 @@ def report(date_from, date_to, interval):
         if minutes < 0:
             negative += 1
             continue
-        items.append({"t": t, "day": d_end[:10], "user": user or "", "token": token or "", "skm": skm or "",
+        items.append({"t": t, "day": d_end[:10], "user": user or "", "token": token or "", "skm": skm or "", "tid": tid or "",
                       "min": round(minutes, 1), "start_at": d_start, "end_at": d_end})
 
     days = [(d_from + timedelta(days=i)).isoformat() for i in range((d_to - d_from).days + 1)]

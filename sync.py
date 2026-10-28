@@ -20,7 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BATCH = 20000
 COLUMNS = ["id", "date", "token", "goal_id", "transaction_id", "personalarea_id", "uid", "status", "amount",
            "comment", "resend", "http_code", "source", "skm", "fin_product", "departament", "vkm",
-           "personal_lk_id", "approved_sum", "updated_at", "user"]
+           "personal_lk_id", "approved_sum", "updated_at", "user", "tid"]
 SELECT = "SELECT %s FROM postback_proxy" % ", ".join("`%s`" % c for c in COLUMNS)
 UPSERT = "INSERT OR REPLACE INTO postback_proxy (%s) VALUES (%s)" % (
     ", ".join('"%s"' % c for c in COLUMNS), ", ".join("?" * len(COLUMNS)))
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS postback_proxy (
   date TEXT, token TEXT, goal_id TEXT, transaction_id TEXT, personalarea_id TEXT,
   uid TEXT, status TEXT, amount TEXT, comment TEXT, resend TEXT, http_code TEXT,
   source TEXT, skm TEXT, fin_product TEXT, departament TEXT, vkm TEXT,
-  personal_lk_id TEXT, approved_sum TEXT, updated_at TEXT, user TEXT
+  personal_lk_id TEXT, approved_sum TEXT, updated_at TEXT, user TEXT, tid TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_date ON postback_proxy(date);
 CREATE INDEX IF NOT EXISTS idx_txn ON postback_proxy(transaction_id, id);
@@ -86,9 +86,14 @@ class Syncer:
             try:
                 local.execute("PRAGMA journal_mode=WAL")
                 local.executescript(SCHEMA)
+                # Колонка tid появилась позже: в старой cf.db добавляем её и один раз догружаем значения
+                if "tid" not in [r[1] for r in local.execute("PRAGMA table_info(postback_proxy)")]:
+                    local.execute("ALTER TABLE postback_proxy ADD COLUMN tid TEXT")
+                    local.commit()
                 state = dict(local.execute("SELECT key, value FROM sync_state"))
                 max_id = local.execute("SELECT MAX(id) FROM postback_proxy").fetchone()[0] or 0
                 full = max_id == 0
+                backfill_tid = not full and state.get("tid_backfill") != "done"
                 # Изменённые строки ищем с запасом в минуту от последнего известного updated_at
                 since = state.get("updated_at") or local.execute(
                     "SELECT MAX(updated_at) FROM postback_proxy WHERE id > ?", (max_id - 50000,)).fetchone()[0]
@@ -114,6 +119,15 @@ class Syncer:
                         rows = [tuple(as_text(v) for v in r) for r in cur.fetchall()]
                         local.executemany(UPSERT, rows)
                         updated_rows = len(rows)
+
+                    if backfill_tid:
+                        # tid заполняется с 2026-10-28, старые строки не проверяем — иначе это полный скан таблицы
+                        cur.execute("SELECT id, tid FROM postback_proxy WHERE id > %s AND tid IS NOT NULL",
+                                    (max_id - 500000,))
+                        local.executemany("UPDATE postback_proxy SET tid = ? WHERE id = ?",
+                                          [(tid, i) for i, tid in cur.fetchall()])
+                        local.execute("INSERT OR REPLACE INTO sync_state VALUES ('tid_backfill', 'done')")
+                        local.commit()
 
                     cur.execute("SELECT id, name FROM lidogen")
                     self.partners = {str(i): n for i, n in cur.fetchall() if n}

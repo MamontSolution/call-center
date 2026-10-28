@@ -205,6 +205,15 @@ dialog#apps::backdrop { background: rgba(0, 0, 0, .45); }
         </div>
       </details>
     </label>
+    <label>tid
+      <details class="dd" data-field="tid">
+        <summary>Все</summary>
+        <div class="dd-panel">
+          <div class="dd-actions"><button type="button" class="dd-reset">Сбросить — все tid</button></div>
+          <div class="dd-list"></div>
+        </div>
+      </details>
+    </label>
     <button type="submit" class="primary">Показать</button>
     <span class="spacer"></span>
     <button type="button" id="csv">Скачать CSV</button>
@@ -354,6 +363,7 @@ const multi = {
   // token — id партнёра, показываем его name из справочника
   token: {sel: new Set(), label: v => (data && data.partners[v]) || v || '(пусто)', sort: (a, b) => byLabel('token')(a, b)},
   skm: {sel: new Set(), label: v => v || '(пусто)', sort: (a, b) => a.localeCompare(b, 'ru')},
+  tid: {sel: new Set(), label: v => v || '(пусто)', sort: (a, b) => a.localeCompare(b, 'ru')},
 };
 const dd = f => document.querySelector(`.dd[data-field="${f}"]`);
 const selected = f => [...multi[f].sel].sort(multi[f].sort);
@@ -489,7 +499,7 @@ function render() {
     (maxMin() != null ? `Не учтено ${nf.format(excluded)} заявок, у которых время ${arrowLabel()} больше ${nf.format(maxMin())} мин (${dur(maxMin())}). ` : '') +
     `День — дата статуса ${data.end.status}. ` +
     `Время считается от первого статуса ${data.start.status} до первого статуса ${data.end.status} той же заявки (связь по transaction_id). ` +
-    `Сотрудник, партнёр и skm берутся из строки статуса ${data.end.status}; если сотрудника там нет — из других строк заявки` +
+    `Сотрудник, партнёр, skm и tid берутся из строки статуса ${data.end.status}; если сотрудника там нет — из других строк заявки` +
     (noUser ? `; заявок без сотрудника: ${nf.format(noUser.total.n)}` : '') + '. ' +
     (data.no_start ? `Не учтено ${nf.format(data.no_start)} заявок со статусом ${data.end.status} без статуса ${data.start.status}. ` : '') +
     (data.negative ? `Не учтено ${nf.format(data.negative)} заявок, где статус ${data.end.status} раньше ${data.start.status}. ` : '') +
@@ -636,7 +646,7 @@ function renderApps() {
       <th>Дата заявки</th><th>ФИО</th><th>Телефон</th>
       <th class="num">Время работы<div class="stname">${arrowLabel()}</div></th>
       ${appsStatuses.map(st => `<th class="st${key(st) ? ' key' : ''}">${st}<div class="stname">${esc(statusName(st))}</div></th>`).join('')}
-      <th>Партнёр</th><th>skm</th>
+      <th>Партнёр</th><th>skm</th><th>tid</th>
     </tr></thead><tbody>` +
     appsRows.map(a => `<tr>
       <td>${a.created === null ? loading(null) : dtFmt(a.created)}</td>
@@ -644,17 +654,17 @@ function renderApps() {
       <td class="phone">${a.phone ? `<a href="tel:${esc(a.phone)}">${esc(a.phone)}</a>` : loading(a.phone)}</td>
       <td class="num"><b>${dur(a.min)}</b></td>
       ${appsStatuses.map(st => `<td class="st${key(st) ? ' key' : ''}">${a.statuses && a.statuses[st] ? dtFmt(a.statuses[st]) : '<span style="color:var(--muted)">—</span>'}</td>`).join('')}
-      <td>${esc(multi.token.label(a.token))}</td><td>${esc(a.skm || '—')}</td>
+      <td>${esc(multi.token.label(a.token))}</td><td>${esc(a.skm || '—')}</td><td>${esc(a.tid || '—')}</td>
     </tr>`).join('') + '</tbody>';
 }
 
 function appsCsv() {
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const lines = [['Дата заявки', 'ФИО', 'Телефон', `Время работы ${arrowLabel()}, мин`,
-                  ...appsStatuses.map(st => q(`${st} ${statusName(st)}`)), 'Партнёр', 'skm', 'transaction_id'].join(';'),
+                  ...appsStatuses.map(st => q(`${st} ${statusName(st)}`)), 'Партнёр', 'skm', 'tid', 'transaction_id'].join(';'),
     ...appsRows.map(a => [a.created, q(a.fio), q(a.phone), Math.round(a.min),
                           ...appsStatuses.map(st => (a.statuses && a.statuses[st]) || ''),
-                          q(multi.token.label(a.token)), q(a.skm), a.t].join(';'))];
+                          q(multi.token.label(a.token)), q(a.skm), q(a.tid), a.t].join(';'))];
   const blob = new Blob(['﻿' + lines.join('\n') + '\n'], {type: 'text/csv;charset=utf-8'});
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
